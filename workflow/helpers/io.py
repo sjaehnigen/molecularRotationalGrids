@@ -30,6 +30,8 @@ def write_object(my_object, filename) -> None:
         function = _write_structure
     elif file_extension == ".xyz":
         function = _write_xyz
+    elif file_extension == ".pdb":
+        function = _write_pdb
     elif file_extension == ".csv":
         function = _write_csv
     elif file_extension == ".txt":
@@ -49,7 +51,7 @@ def read_object(filename, **kwargs):
         function = _read_sparse_array
     elif file_extension == ".pkl":
         function = _read_network
-    elif file_extension == ".gro" or file_extension == ".xyz":
+    elif file_extension in [".gro", ".xyz", ".pdb"]:
         function = _read_molecular_structure
     elif file_extension == ".xvg":
         function = _read_energy
@@ -137,13 +139,18 @@ def _write_xyz(universe, filename: str) -> None:
         for ts in universe.trajectory:
             W.write(universe.atoms)
 
+def _write_pdb(universe, filename: str) -> None:
+    with md.coordinates.PDB.PDBWriter(filename, n_atoms=universe.atoms.n_atoms) as W:
+        for ts in universe.trajectory:
+            W.write(universe.atoms)
+
 def _read_molecular_structure(filename: str, *args, **kwargs) -> md.Universe:
-    u = md.Universe(filename)
+    u = md.Universe(filename, to_guess=["elements", "masses"], force_guess=["elements", "masses"])
 
     # guess masses
     u.add_TopologyAttr('elements')
     dict_labels = {"1": "H", "2": "C", "3": "O", "4": "O", "5": "O", "6": "Zr", "OW": "O", "HW1": "H", "HW2": "H",
-                   "7": "Ar", "CD1": "C", "CD2": "C", "CE1": "C", "CE2": "C", "CG": "C", "CZ": "C", "HD1": "H",
+                   "7": "Ar", "AR": "Ar", "CD1": "C", "CD2": "C", "CE1": "C", "CE2": "C", "CG": "C", "CZ": "C", "HD1": "H",
                    "HD2": "H", "HE1": "H", "HE2": "H", "HG": "H", "HZ": "H"}
     initial_labels = u.atoms.names
     u.atoms.elements = [dict_labels[name] if name in dict_labels.keys() else name for name in u.atoms.names]

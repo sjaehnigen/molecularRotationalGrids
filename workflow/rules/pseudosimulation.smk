@@ -51,7 +51,7 @@ rule create_pseudotrajectory:
     Here we are creating a pseudotrajectory from two molecules and a network.
     """
     input:
-        structure = f"<pseudosimulation>structure.gro",
+        structure = f"<pseudosimulation>structure.<ext_str>",
         molecule_1 = f"<pseudosimulation>molecule1.<ext_inp>",
         molecule_2 = f"<pseudosimulation>molecule2.<ext_inp>",
         network = f"<outputs_network>network.pkl"
@@ -64,8 +64,8 @@ rule create_pseudotrajectory:
         m2 = read_object(input.molecule_2)
 
         us = read_object(input.structure)
-        m1.dimensions = us.dimensions
-        m2.dimensions = us.dimensions
+        # m1.dimensions = us.dimensions
+        # m2.dimensions = us.dimensions
         network = read_object(input.network)
         weights = m2.atoms.masses
         coordinates = network.create_pseudotrajectory_coordinates_from(m2.atoms.positions, weights)
@@ -74,7 +74,7 @@ rule create_pseudotrajectory:
         u.add_TopologyAttr('elements')
         u.add_TopologyAttr('names')
         dict_labels = {"1": "H", "2": "C", "3": "O", "4": "O", "5": "O", "6": "Zr", "OW": "O", "HW1": "H", "HW2": "H",
-                       "7": "Ar", "CD1": "C", "CD2": "C", "CE1": "C", "CE2": "C", "CG": "C", "CZ": "C", "HD1": "H",
+                       "7": "Ar", "AR": "Ar", "CD1": "C", "CD2": "C", "CE1": "C", "CE2": "C", "CG": "C", "CZ": "C", "HD1": "H",
                        "HD2": "H", "HE1": "H", "HE2": "H", "HG": "H", "HZ": "H"}
         #initial_labels = u.atoms.names
         u.atoms.elements = [dict_labels[name] if name in dict_labels.keys() else name for name in u.atoms.types]

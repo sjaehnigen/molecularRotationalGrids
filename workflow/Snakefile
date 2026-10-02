@@ -118,9 +118,9 @@ if "plot_lowest_energies" in config["analysis"]["parts_to_perform"]:
 
 if "assign_trajectory"  in config["analysis"]["parts_to_perform"]:
     DESIRED_RESULTS.extend(
-        ["<outputs_assignment>wrapped_trajectory.<ext_trj>", "<outputs_assignment>full_assignment.npy",
-         expand(f"<outputs_molecular_plots>compare_to_assignment/overlapping_frame_{{i}}zoom{{zoom_level}}_view{{view_index}}_{{COM_or_full}}.png",
-             zoom_level=zoom_level,view_index=view_index,COM_or_full=["full"], i=[0, 1, 2, 3, 4, 5, 6, 7, 468, 98])]
+        ["<outputs_assignment>wrapped_trajectory.<ext_trj>", "<outputs_assignment>full_assignment.npy",]
+#         expand(f"<outputs_molecular_plots>compare_to_assignment/overlapping_frame_{{i}}zoom{{zoom_level}}_view{{view_index}}_{{COM_or_full}}.png",
+#             zoom_level=zoom_level,view_index=view_index,COM_or_full=["full"], i=[0, 1, 2, 3, 4, 5, 6, 7, 468, 98])]
     )
 
 if "sqra"  in config["analysis"]["parts_to_perform"]:

@@ -58,7 +58,7 @@ def assign_to_cartesian_translation_grid(points_to_assign: NDArray, subgrids: li
     Returns:
         a (N_points,) array of translation indices
     """
-    assert len(subgrids) == len(subgrid_limits) == len(periodic_in) == 3
+    assert len(subgrids) == len(subgrid_limits) == len(periodic_in) == 3, f'False statement: {len(subgrids)} == {len(subgrid_limits)} == {len(periodic_in)} == 3'
     N_x, N_y, N_z = [len(subgrid) for subgrid in subgrids]
 
     xyz_assignments = np.zeros(points_to_assign.shape)
@@ -71,6 +71,45 @@ def assign_to_cartesian_translation_grid(points_to_assign: NDArray, subgrids: li
     combined_assignments = x_assignments*N_y*N_z + y_assignments*N_z + z_assignments
     return x_assignments, y_assignments, z_assignments, combined_assignments
 
+
+def assign_to_spherical_grid(points_to_assign: NDArray, subgrids: list) -> tuple:
+    """
+    Assign Cartesian points to a spherical grid: the orientation is assigned to the closest direction
+    (largest dot product with the unit vector of the point), the distance to the closest radial grid value.
+    Combined index: radial_index * N_o + orientation_index
+
+    Args:
+        points_to_assign (NDArray): a (N_points, 3) array of Cartesian coordinates to be assigned
+        subgrids (list): a list of the form [orientations, radii], where orientations is a (N_o, 3)
+            list/array of unit vectors and radii is a list of N_r radial grid values
+
+    Returns:
+        a tuple (orientation_assignments, radial_assignments, combined_assignments), each of shape (N_points,)
+    """
+    points = np.asarray(points_to_assign, dtype=float)
+    orientations = np.asarray(subgrids[0], dtype=float)
+    radii = np.asarray(subgrids[1], dtype=float)
+    N_o = len(orientations)
+
+    assert len(subgrids) == 2, f'Expected subgrids of the form [orientations, radii], got {len(subgrids)} entries'
+    assert points.ndim == 2 and points.shape[1] == 3, f'points_to_assign must have shape (N_points, 3), got {points.shape}'
+    assert orientations.ndim == 2 and orientations.shape[1] == 3, f'orientations must have shape (N_o, 3), got {orientations.shape}'
+    assert radii.ndim == 1, f'radii must be a 1D list/array, got shape {radii.shape}'
+
+    # radial part: distance to origin, then closest radial grid value
+    distances = np.linalg.norm(points, axis=1)
+    radial_assignments = np.argmin(np.abs(distances[:, None] - radii[None, :]), axis=1)
+
+    # orientation part: unit vectors (points at the origin get an arbitrary direction, index 0)
+    unit_vectors = np.divide(points, distances[:, None], out=np.zeros_like(points), where=distances[:, None] > 0)
+    orientations /= np.linalg.norm(orientations, axis=1, keepdims=True)  # in case they're not normalized
+    orientation_assignments = np.argmax(unit_vectors @ orientations.T, axis=1)
+
+    combined_assignments = radial_assignments * N_o + orientation_assignments    
+    return orientation_assignments, radial_assignments, combined_assignments
+
+
+## ToDo: orientation should be renamed to rotation
 def assign_to_best_orientation(structures_to_assign: NDArray, structure_at_each_gridpoint: NDArray) -> NDArray:
     """
     We want to determine the best rotational fit for the structures in the trajectory among the possibilities given by

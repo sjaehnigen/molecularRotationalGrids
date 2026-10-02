@@ -9,8 +9,13 @@ import numpy as np
 import plotly.graph_objects as go
 from MDAnalysis.topology.guessers import guess_masses
 
+import MDAnalysis as mda
+from MDAnalysis.transformations import center_in_box 
+from MDAnalysis.coordinates.memory import MemoryReader
+
+
 from molgri.molecules.find_unit_cell import get_cuboid_cell_side_lengths, wrap_multiple_atoms_to_cuboid_cell, wrap_to_cuboid_cell
-from molgri.molecules.assignment import assign_to_cartesian_translation_grid, assign_to_best_orientation
+from molgri.molecules.assignment import assign_to_cartesian_translation_grid, assign_to_spherical_grid, assign_to_best_orientation
 
 from workflow.helpers.io import get_num_atoms, read_object, write_object
 
@@ -24,8 +29,8 @@ rule wrap_trajectory2cuboid_cell:
     This is tested - you can look at frame_i of wrapped trajectory and frame_i of simulation to confirm.
     """
     input:
-        structure = f"<simulation>structure.gro",
-        trajectory = f"<simulation>trajectory.xtc", #f"<simulation>trajectory.<ext_trj>", #f"trajectory_new.lammpstrj", #f"<simulation>trajectory.<ext_trj>",
+        structure = f"<simulation>structure.<ext_str>",
+        trajectory = f"<simulation>trajectory.<ext_trj>", #f"<simulation>trajectory.<ext_trj>", #f"trajectory_new.lammpstrj", #f"<simulation>trajectory.<ext_trj>",
         structure1 = f"<simulation>molecule1.<ext_inp>",
     benchmark:
         "<outputs_assignment>duration_wrapping_trajectory.txt"
@@ -81,10 +86,11 @@ rule wrap_molecule2_COM:
         cuboid_cell_lengths = config["pseudotrajectory"]["cuboid_cell"]
     run:
         com_m2 = read_object(input.com_m2)
-        print(com_m2, len(com_m2))
+        # print(com_m2, len(com_m2))
         # NEED TO CONVERT TO ANGSTROM
-        com_array_m2 = 10 * com_m2.to_numpy()[:, -3:]
-        print(com_array_m2)
+        # com_array_m2 = 10 * com_m2.to_numpy()[:, -3:]
+        com_array_m2 = com_m2.to_numpy()[:, -3:]
+        # print(com_array_m2)
 
         write_object(com_array_m2, output.com_m2)
 
@@ -103,31 +109,31 @@ rule position_assignment_csv:
     We also provide a .csv file with more information, very usefula for debugging.
     """
     input:
-        energy_csv = f"<simulation>energy.csv",
+#        energy_csv = f"<simulation>energy.csv",
         com_m2 = f"<outputs_assignment>m2_com.npy",
         com_m2_wrapped = f"<outputs_assignment>cuboid_wrapped_m2_com.npy",
         grid_info= "<outputs_network>grid_info.yaml",
         indices_csv= f"<outputs_network>indices_interpretation.csv"
     output:
-        assignment_csv =  f"<outputs_assignment>translation_assignment.csv",
+#        assignment_csv =  f"<outputs_assignment>translation_assignment.csv",
         translation_assignment= f"<outputs_assignment>translation_assignment.npy",
     run:
 
-        import pandas as pd
+#        import pandas as pd
         import numpy as np
 
         com_m2 = read_object(input.com_m2)
         com_m2_wrapped = read_object(input.com_m2_wrapped)
         print("len com ", len(com_m2))
 
-        energy = read_object(input.energy_csv)["Energy [kJ/mol]"]
-        print("len energy ", len(energy.to_numpy()))
-        df_indices = read_object(input.indices_csv, header=[0, 1])
+#        energy = read_object(input.energy_csv)["Energy [kJ/mol]"]
+#        print("len energy ", len(energy.to_numpy()))
+#         df_indices = read_object(input.indices_csv, header=[0, 1])
 
-        df_indices.columns = [col[0] if col[1].startswith("Unnamed") else col[1] for col in df_indices.columns]
+#         df_indices.columns = [col[0] if col[1].startswith("Unnamed") else col[1] for col in df_indices.columns]
 
 
-        df_indices = df_indices.loc[df_indices["Rotation index"] == 0]
+#         df_indices = df_indices.loc[df_indices["Rotation index"] == 0]
 
         grid_info = read_object(input.grid_info)
         subgrids = grid_info["subgrid_points"]
@@ -135,28 +141,30 @@ rule position_assignment_csv:
         periodic_in = grid_info["periodic_in"]
         N_gridpoints = grid_info["subgrid_N_points"]
         print("N_gridpoints ", N_gridpoints)
-        data = assign_to_cartesian_translation_grid(com_m2, subgrids, subgrid_limits, periodic_in)
-        assigned_array = data[-1].astype(int).T
-        df_assignments = pd.DataFrame(np.array(data).T, columns=["X index", "Y index", "Z index", "Total position index"], dtype=int)
-
-        df_assignments[["x_COM", "y_COM", "z_COM"]] = pd.DataFrame(list(map(tuple, np.round(com_m2, 5))),index=df_assignments.index)
-        df_assignments[
-            ["x_wCOM", "y_wCOM", "z_wCOM"]] = pd.DataFrame(list(map(tuple, np.round(com_m2_wrapped, 5))),index=df_assignments.index)
-
-        rows = (
-            df_indices
-            .set_index("Translation index")
-            .loc[assigned_array]
-            .reset_index()
-        )
-
-        df_assignments["x"] = rows["x"]
-        df_assignments["y"] = rows["y"]
-        df_assignments["z"] = rows["z"]
-
-
-        #df_assignments["Assigned position gridpoint"] = list(map(tuple, np.round(position_array, 5)))
-        df_assignments["Energy [kJ/mol]"] = energy.to_numpy()
+        # ToDo: match cases: Cartesian or Spherical grid
+        # data = assign_to_cartesian_translation_grid(com_m2, subgrids, subgrid_limits, periodic_in)
+        data = assign_to_spherical_grid(com_m2, subgrids)
+#        assigned_array = data[-1].astype(int).T
+#         df_assignments = pd.DataFrame(np.array(data).T, columns=["X index", "Y index", "Z index", "Total position index"], dtype=int)
+# 
+#         df_assignments[["x_COM", "y_COM", "z_COM"]] = pd.DataFrame(list(map(tuple, np.round(com_m2, 5))),index=df_assignments.index)
+#         df_assignments[
+#             ["x_wCOM", "y_wCOM", "z_wCOM"]] = pd.DataFrame(list(map(tuple, np.round(com_m2_wrapped, 5))),index=df_assignments.index)
+# 
+#         rows = (
+#             df_indices
+#             .set_index("Translation index")
+#             .loc[assigned_array]
+#             .reset_index()
+#         )
+# 
+#         df_assignments["x"] = rows["x"]
+#         df_assignments["y"] = rows["y"]
+#         df_assignments["z"] = rows["z"]
+# 
+# 
+#         #df_assignments["Assigned position gridpoint"] = list(map(tuple, np.round(position_array, 5)))
+#        df_assignments["Energy [kJ/mol]"] = energy.to_numpy()
 
         tuples = [
             ("Direction indices", "X_index"),
@@ -175,10 +183,11 @@ rule position_assignment_csv:
             ("Energy [kJ/mol]", ""),
         ]
 
-        df_assignments.columns = pd.MultiIndex.from_tuples(tuples)
+#        df_assignments.columns = pd.MultiIndex.from_tuples(tuples)
 
-        write_object(df_assignments, output.assignment_csv)
-        write_object(np.array(data[3]), output.translation_assignment)
+#        write_object(df_assignments, output.assignment_csv)
+        # write_object(np.array(data[3]), output.translation_assignment)
+        write_object(np.array(data[2]), output.translation_assignment)
 
 
 
@@ -220,9 +229,9 @@ checkpoint full_assignment:
     We combine the rotation assignment and position assignment into the final, full assignment index.
     """
     input:
-        rotation_assignment = f"<outputs_assignment>rotation_assignment.npy",
-        translation_assignment= f"<outputs_assignment>translation_assignment.npy",
-        grid_info= "<outputs_network>grid_info.yaml",
+        rotation_assignment=f"<outputs_assignment>rotation_assignment.npy",
+        translation_assignment=f"<outputs_assignment>translation_assignment.npy",
+        grid_info=f"<outputs_network>grid_info.yaml",
     output:
         full_assignment = f"<outputs_assignment>full_assignment.npy",
     run:
@@ -244,7 +253,7 @@ rule count_assignments:
     input:
         translation_assignment=f"<outputs_assignment>translation_assignment.npy",
         rot_assignment=f"<outputs_assignment>rotation_assignment.npy",
-        full_assignment=f"<outputs_assignment>full_assignment.npy",
+        full_assignment=f"<outputs_assignment>full_assignment.npy"
     output:
         translation_assignment = f"<outputs_other_plots>hist_translation_assignment.png",
         rot_assignment = f"<outputs_other_plots>hist_rotation_assignment.png",
@@ -271,164 +280,150 @@ rule count_assignments:
 #     else:
 #         return {"trajectory": f"{wc.path}trajectory.<ext_trj>", "structure1": f"{wc.path}molecule1.<ext_inp>", "structure": f"{wc.path}structure.<ext_str>"}
 #
-# rule trajectory_centered_at_m2_COM_MDAnalysis:
-#     """
-#     Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
-#     molecule1 is not written. This is useful so we can later assign the best rotation.
-#     """
-#     input:
-#         trajectory="<simulation>dump.lammpstrj",
-#         structure1 ="<simulation>molecule1.<ext_inp>"
-#     output:
-#         trajectory="<simulation>m2_trajectory_centered.<ext_trj>",
-#     run:
-#         n_mol1 = get_num_atoms(input.structure1)
-#
-#         try:
-#             u = Universe(input.trajectory,format="LAMMPSDUMP")
-#         except ValueError:
-#             u = Universe(input.trajectory,format="XYZ")
-#         ag2 = u.select_atoms("all")
-#         ag2 = ag2[n_mol1:]
-#
-#         from MDAnalysis.coordinates.XYZ import XYZWriter
-#
-#         # Output writer
-#         with XYZWriter(output.trajectory, n_atoms=len(ag2)) as W:
-#             for ts in u.trajectory:
-#                 # Compute COM
-#                 com = ag2.center_of_mass()
-#
-#                 # Translate all atoms
-#                 u.atoms.positions -= com
-#
-#                 # Write centered frame
-#                 W.write(ag2.atoms)
-#
-# rule trajectory_centered_at_m2_COM_MDAnalysis_pseudo:
-#     """
-#     Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
-#     molecule1 is not written. This is useful so we can later assign the best rotation.
-#     """
-#     input:
-#         trajectory="<pseudosimulation>trajectory.<ext_trj>",
-#         structure1 ="<pseudosimulation>molecule1.<ext_str>",
-#         structure="<pseudosimulation>structure.<ext_str>"
-#     output:
-#         trajectory="<pseudosimulation>m2_trajectory_centered.<ext_trj>",
-#     run:
-#         n_mol1 = get_num_atoms(input.structure1)
-#
-#         try:
-#             u = Universe(input.trajectory,format="LAMMPSDUMP")
-#         except ValueError:
-#             u = Universe(input.trajectory,format="XYZ")
-#         ag2 = u.select_atoms("all")
-#         ag2 = ag2[n_mol1:]
-#
-#         from MDAnalysis.coordinates.XYZ import XYZWriter
-#
-#         # Output writer
-#         with XYZWriter(output.trajectory, n_atoms=len(ag2)) as W:
-#             for ts in u.trajectory:
-#                 # Compute COM
-#                 com = ag2.center_of_mass()
-#
-#                 # Translate all atoms
-#                 u.atoms.positions -= com
-#
-#                 # Write centered frame
-#                 W.write(ag2.atoms)
-#
-# rule m2_COM_MDAnalysis:
-#     """
-#     Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
-#     molecule1 is not written. This is useful so we can later assign the best rotation.
-#     """
-#     input:
-#         trajectory=f"<simulation>dump.lammpstrj",
-#         structure1=f"<simulation>molecule1.<ext_str>",
-#     output:
-#         trajectory="<simulation>COM_m2.xvg",
-#     run:
-#
-#         def save_xvg(filename, data, xlabel="Time (ps)", ylabel="Value", title=""):
-#             with open(filename,"w") as f:
-#                 for i in range(13):
-#                     f.write("#\n")
-#                 f.write(f'@    title \"{title}\"\n')
-#                 f.write(f'@    xaxis label \"{xlabel}\"\n')
-#                 f.write(f'@    xaxis label \"{xlabel}\"\n')
-#                 f.write(f'@ s0 legend "MOL2 X"\n')
-#                 f.write(f'@ s0 legend "MOL2 Y"\n')
-#                 f.write(f'@ s0 legend "MOL2 Z"\n')
-#                 f.write("@TYPE xy\n")
-#
-#                 for row in data:
-#                     f.write(" ".join(f"{x:.8f}" for x in row) + "\n")
-#
-#         n_mol1 = get_num_atoms(input.structure1)
+rule trajectory_centered_at_m2_COM_MDAnalysis:
+    """
+    Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
+    molecule1 is not written. This is useful so we can later assign the best rotation.
+    """
+    input:
+        trajectory="<simulation>trajectory.<ext_trj>",
+        structure1 ="<simulation>molecule1.<ext_inp>",
+    output:
+        trajectory="<simulation>m2_trajectory_centered.<ext_trj>",
+    run:
+        n_mol1 = get_num_atoms(input.structure1)
+
+        u = read_object(input.trajectory)
+        ag2 = u.select_atoms("all")
+        ag2 = ag2[n_mol1:]
+
+        u.trajectory.add_transformations(center_in_box(ag2, center='mass', point=[0, 0, 0]))
+        
+        # write_object expects a MDA Universe, so we have to generate a new one
+        new_u = mda.Merge(ag2)
+        coords = np.array([ag2.positions for ts in u.trajectory])
+        dims = None if u.dimensions is None else np.array([ts.dimensions for ts in u.trajectory])
+        new_u.load_new(coords, format=MemoryReader, dimensions=dims)
+        write_object(new_u, output.trajectory)
+
+rule trajectory_centered_at_m2_COM_MDAnalysis_pseudo:
+    """
+    Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
+    molecule1 is not written. This is useful so we can later assign the best rotation.
+    """
+    input:
+        trajectory="<pseudosimulation>trajectory.<ext_trj>",
+        structure1 ="<pseudosimulation>molecule1.<ext_inp>",
+        structure="<pseudosimulation>structure.<ext_str>",
+    output:
+        trajectory="<pseudosimulation>m2_trajectory_centered.<ext_trj>",
+    run:
+        n_mol1 = get_num_atoms(input.structure1)
+
+        u = read_object(input.trajectory)
+        ag2 = u.select_atoms("all")
+        ag2 = ag2[n_mol1:]
+
+        u.trajectory.add_transformations(center_in_box(ag2, center='mass', point=[0, 0, 0]))
+
+        # write_object expects a MDA Universe, so we have to generate a new one
+        new_u = mda.Merge(ag2)
+        coords = np.array([ag2.positions for ts in u.trajectory])
+        dims = None if u.dimensions is None else np.array([ts.dimensions for ts in u.trajectory])
+        new_u.load_new(coords, format=MemoryReader, dimensions=dims)
+        write_object(new_u, output.trajectory)
+
+rule m2_COM_MDAnalysis:
+    """
+    Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
+    molecule1 is not written. This is useful so we can later assign the best rotation.
+    """
+    input:
+        trajectory=f"<simulation>trajectory.<ext_trj>",
+        structure1=f"<simulation>molecule1.<ext_inp>",
+    output:
+        trajectory="<simulation>COM_m2.xvg",
+    run:
+
+        def save_xvg(filename, data, xlabel="Time (ps)", ylabel="Value", title=""):
+            with open(filename,"w") as f:
+                for i in range(13):
+                    f.write("#\n")
+                f.write(f'@    title \"{title}\"\n')
+                f.write(f'@    xaxis label \"{xlabel}\"\n')
+                f.write(f'@    xaxis label \"{xlabel}\"\n')
+                f.write(f'@ s0 legend "MOL2 X"\n')
+                f.write(f'@ s0 legend "MOL2 Y"\n')
+                f.write(f'@ s0 legend "MOL2 Z"\n')
+                f.write("@TYPE xy\n")
+
+                for row in data:
+                    f.write(" ".join(f"{x:.8f}" for x in row) + "\n")
+
+        n_mol1 = get_num_atoms(input.structure1)
 #         try:
 #             u = Universe(input.trajectory, format="LAMMPSDUMP")
 #         except ValueError:
 #             u = Universe(input.structure, input.trajectory)
 #         print(u, " traj len ", len(u.trajectory))
-#         ag2 = u.select_atoms("all")
-#         ag2 = ag2[n_mol1:]
-#
-#         # Output writer
-#         all_coms = []
-#         for ts in u.trajectory:
-#             # Compute COM
-#             com = ag2.center_of_mass()
-#             all_coms.append(com)
-#         all_coms = np.array(all_coms)
-#         print(all_coms)
-#         data = np.column_stack([np.arange(len(u.trajectory)), all_coms[:, 0], all_coms[:, 1], all_coms[:, 2]])
-#         print("data ", data.shape)
-#         save_xvg(output.trajectory,data,xlabel="Time (ps)",ylabel="Coordinate (nm)", title="Center of mass")
-#
-# rule m2_COM_MDAnalysis_pseudo:
-#     """
-#     Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
-#     molecule1 is not written. This is useful so we can later assign the best rotation.
-#     """
-#     input:
-#         trajectory=f"<pseudosimulation>trajectory.<ext_trj>",
-#         structure1=f"<pseudosimulation>molecule1.<ext_str>",
-#         structure="<pseudosimulation>structure.<ext_str>"
-#     output:
-#         trajectory="<pseudosimulation>COM_m2.xvg",
-#     run:
-#
-#         def save_xvg(filename, data, xlabel="Time (ps)", ylabel="Value", title=""):
-#             with open(filename,"w") as f:
-#                 for i in range(13):
-#                     f.write("#\n")
-#                 f.write(f'@    title \"{title}\"\n')
-#                 f.write(f'@    xaxis label \"{xlabel}\"\n')
-#                 f.write(f'@    yaxis label \"{ylabel}\"\n')
-#                 f.write(f'@ s0 legend "MOL2 X"\n')
-#                 f.write(f'@ s0 legend "MOL2 Y"\n')
-#                 f.write(f'@ s0 legend "MOL2 Z"\n')
-#                 f.write("@TYPE xy\n")
-#
-#                 for row in data:
-#                     f.write(" ".join(f"{x:.8f}" for x in row) + "\n")
-#
-#         n_mol1 = get_num_atoms(input.structure1)
+        u = read_object(input.trajectory)
+        ag2 = u.select_atoms("all")
+        ag2 = ag2[n_mol1:]
+
+        # Output writer
+        all_coms = []
+        for ts in u.trajectory:
+            # Compute COM
+            com = ag2.center_of_mass()
+            all_coms.append(com)
+        all_coms = np.array(all_coms)
+        # print(all_coms)
+        data = np.column_stack([np.arange(len(u.trajectory)), all_coms[:, 0], all_coms[:, 1], all_coms[:, 2]])
+        print("data ", data.shape)
+        save_xvg(output.trajectory,data,xlabel="Time (ps)",ylabel="Coordinate (nm)", title="Center of mass")
+
+rule m2_COM_MDAnalysis_pseudo:
+    """
+    Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
+    molecule1 is not written. This is useful so we can later assign the best rotation.
+    """
+    input:
+        trajectory=f"<pseudosimulation>trajectory.<ext_trj>",
+        structure1=f"<pseudosimulation>molecule1.<ext_inp>",
+        structure="<pseudosimulation>structure.<ext_str>"
+    output:
+        trajectory="<pseudosimulation>COM_m2.xvg",
+    run:
+
+        def save_xvg(filename, data, xlabel="Time (ps)", ylabel="Value", title=""):
+            with open(filename,"w") as f:
+                for i in range(13):
+                    f.write("#\n")
+                f.write(f'@    title \"{title}\"\n')
+                f.write(f'@    xaxis label \"{xlabel}\"\n')
+                f.write(f'@    yaxis label \"{ylabel}\"\n')
+                f.write(f'@ s0 legend "MOL2 X"\n')
+                f.write(f'@ s0 legend "MOL2 Y"\n')
+                f.write(f'@ s0 legend "MOL2 Z"\n')
+                f.write("@TYPE xy\n")
+
+                for row in data:
+                    f.write(" ".join(f"{x:.8f}" for x in row) + "\n")
+
+        n_mol1 = get_num_atoms(input.structure1)
 #         try:
 #             u = Universe(input.trajectory, format="LAMMPSDUMP")
 #         except ValueError:
 #             u = Universe(input.structure, input.trajectory)
-#         ag2 = u.select_atoms("all")
-#         ag2 = ag2[n_mol1:]
-#         # Output writer
-#         all_coms = []
-#         for ts in u.trajectory:
-#             # Compute COM
-#             com = ag2.center_of_geometry() # todo: CHANGE TO MASS!
-#             all_coms.append(com)
-#         all_coms = np.array(all_coms)
-#         data = np.column_stack([np.arange(len(u.trajectory)), all_coms[:, 0], all_coms[:, 1], all_coms[:, 2]])
-#         save_xvg(output.trajectory,data,xlabel="Time (ps)",ylabel="Coordinate (nm)", title="Center of mass")
+        u = read_object(input.trajectory)
+        ag2 = u.select_atoms("all")
+        ag2 = ag2[n_mol1:]
+        # Output writer
+        all_coms = []
+        for ts in u.trajectory:
+            # Compute COM
+            com = ag2.center_of_geometry() # todo: CHANGE TO MASS!
+            all_coms.append(com)
+        all_coms = np.array(all_coms)
+        data = np.column_stack([np.arange(len(u.trajectory)), all_coms[:, 0], all_coms[:, 1], all_coms[:, 2]])
+        save_xvg(output.trajectory,data,xlabel="Time (ps)",ylabel="Coordinate (nm)", title="Center of mass")

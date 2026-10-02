@@ -29,12 +29,12 @@ rule print_lowest_energies:
         #df = df.sort_values(by="Energy [kJ/mol]",ascending=False)
         #print(df.head(20))
 
-rule print_position_assignment:
-    input:
-        energy_csv = rules.position_assignment_csv.output.assignment_csv
-    run:
-        df = read_object(input.energy_csv)
-        print(df.loc[83546])
+# rule print_position_assignment:
+#     input:
+#         energy_csv = rules.position_assignment_csv.output.assignment_csv
+#     run:
+#         df = read_object(input.energy_csv)
+#         print(df.loc[83546])
 
 rule print_assignment:
     input:

@@ -25,6 +25,8 @@ sqra:
   tolerance_rate_matrix_row_sum: 1e-12
   # eigendecomposition
   tolerance_eigendecomposition: 0
+  translational_diffusion_coefficient: [86.28, 86.28, 86.28]
+  rotational_diffusion_coefficient: [7.19, 7.19, 7.19]
   sigma: 0
   T: 300
   allow_diffusion_to_bulk: False
