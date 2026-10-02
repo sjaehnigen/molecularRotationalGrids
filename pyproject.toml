@@ -8,7 +8,7 @@ readme = "README.md"
 keywords = ["pseudotrajectory", "molecular grids", "association", "state space discretisation"]
 packages = [
     { include = "molgri" },
-    { include = "workflows" }
+    { include = "workflow" }
 ]
 repository = "https://github.com/bkellerlab/molecularRotationalGrids"
 homepage = "https://www.bcp.fu-berlin.de/en/chemie/chemie/forschung/PhysTheoChem/agkeller/index.html"
