@@ -133,12 +133,17 @@ def assign_to_best_orientation(structures_to_assign: NDArray, structure_at_each_
     # right now this takes 9min for an extremely long trajectory & 80 reference rotations, so not too worried
 
     # we loop over reference structures since this is presumably the much shorter list
-    for i, ref_structure in enumerate(structure_at_each_gridpoint):
-        distances_to_this_ref = np.linalg.norm((structures_to_assign - ref_structure), axis=2)
-        total_distances = distances_to_this_ref.sum(axis=1)
-        distances[i] = total_distances
+    # for i, ref_structure in enumerate(structure_at_each_gridpoint):
+    #     distances_to_this_ref = np.linalg.norm((structures_to_assign - ref_structure), axis=2)
+    #     total_distances = distances_to_this_ref.sum(axis=1)
+    #     distances[i] = total_distances
+    # best_indices = np.argmin(distances.T, axis=1)
 
-    best_indices = np.argmin(distances.T, axis=1)
+    # faster, since: ||x − r||² = ||x||² − 2x·r + ||r||² (and ||x||² is constant)
+    X = structures_to_assign.reshape(len(structures_to_assign), -1)                # (N_frames, 39)
+    R = structure_at_each_gridpoint.reshape(len(structure_at_each_gridpoint), -1)  # (N_rot, 39)
+    best_indices = np.argmin((R**2).sum(1) - 2 * X @ R.T, axis=1)                  # argmin[axis=1](N_frames, N_rot)
+
     return best_indices
 
 def _calc_distance_along_traj(frame_index, u, reference_coordinates):

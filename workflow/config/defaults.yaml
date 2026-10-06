@@ -5,6 +5,7 @@ pseudotrajectory:
   cuboid_cell: [14.5086, 12.564816173346905, 11.84622229]
 
 analysis:
+  simulations_root: SIMULATION/
   energy_program: GROMACS
   zoom_level: 0
   view_index: [ 1 ]

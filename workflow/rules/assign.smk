@@ -21,6 +21,48 @@ from workflow.helpers.io import get_num_atoms, read_object, write_object
 
 ##################################### POSITION ASSIGNMENT ####################################################
 
+# Helper rule to resolve the pathvar
+rule _sim_root:
+    input:
+        "<output_specific_molecule>"
+
+rule copy_molecular_files_from_input_2:
+    """
+    Here the goal is just to start a new directory and copy molecular files there.
+    """
+    input:
+        molecule_1 = f"<inputs_structures><molecule1>.<ext_inp>",
+        molecule_2 = f"<inputs_structures><molecule2>.<ext_inp>",
+    output:
+        molecule_1 = f"<simulation>molecule1.<ext_inp>",
+        molecule_2 = f"<simulation>molecule2.<ext_inp>",
+    run:
+        from molgri.molecules.bimolecular import move_to_center
+
+        m1 = read_object(input.molecule_1)
+        m2 = read_object(input.molecule_2)
+
+        # center molecules
+        m1 = move_to_center(m1)
+        m2 = move_to_center(m2)
+
+        write_object(m1, output.molecule_1)
+        write_object(m2, output.molecule_2)
+
+rule create_structure_2:
+    input:
+        molecule_1 = f"<simulation>molecule1.<ext_inp>",
+        molecule_2 = f"<simulation>molecule2.<ext_inp>",
+    output:
+        structure = f"<simulation>structure.<ext_str>",
+    run:
+        from molgri.molecules.bimolecular import get_bimolecular_structure
+        m1 = read_object(input.molecule_1)
+        m2 = read_object(input.molecule_2)
+        z_distance = float(config["grid"]["translation_subgrids_A"][-1][1])
+        structure = get_bimolecular_structure(m1, m2, z_distance=z_distance)
+        write_object(structure, output.structure)
+
 rule wrap_trajectory2cuboid_cell:
     """
     This rule takes a normal (already centered etc.) trajectory of two molecules and applies periodic boundary
@@ -117,6 +159,8 @@ rule position_assignment_csv:
     output:
 #        assignment_csv =  f"<outputs_assignment>translation_assignment.csv",
         translation_assignment= f"<outputs_assignment>translation_assignment.npy",
+    params:
+        translation_algorithm = config["grid"]["translation_algorithm"]
     run:
 
 #        import pandas as pd
@@ -141,9 +185,15 @@ rule position_assignment_csv:
         periodic_in = grid_info["periodic_in"]
         N_gridpoints = grid_info["subgrid_N_points"]
         print("N_gridpoints ", N_gridpoints)
-        # ToDo: match cases: Cartesian or Spherical grid
-        # data = assign_to_cartesian_translation_grid(com_m2, subgrids, subgrid_limits, periodic_in)
-        data = assign_to_spherical_grid(com_m2, subgrids)
+
+        match params.translation_algorithm:
+            case "spherical":
+                data = assign_to_spherical_grid(com_m2, subgrids)
+            case "cartesian":
+                data = assign_to_cartesian_translation_grid(com_m2, subgrids, subgrid_limits, periodic_in)
+            case _:
+                raise ValueError("unknown translation algorithm")
+
 #        assigned_array = data[-1].astype(int).T
 #         df_assignments = pd.DataFrame(np.array(data).T, columns=["X index", "Y index", "Z index", "Total position index"], dtype=int)
 # 
@@ -292,18 +342,27 @@ rule trajectory_centered_at_m2_COM_MDAnalysis:
         trajectory="<simulation>m2_trajectory_centered.<ext_trj>",
     run:
         n_mol1 = get_num_atoms(input.structure1)
-
         u = read_object(input.trajectory)
-        ag2 = u.select_atoms("all")
-        ag2 = ag2[n_mol1:]
+        ag2 = u.atoms[n_mol1:]
 
-        u.trajectory.add_transformations(center_in_box(ag2, center='mass', point=[0, 0, 0]))
-        
+        n_frames = u.trajectory.n_frames
+        coords = np.empty((n_frames, ag2.n_atoms, 3), dtype=np.float32)
+        has_box = u.dimensions is not None
+        dims = np.empty((n_frames, 6), dtype=np.float32) if has_box else None
+
+        for i, ts in enumerate(u.trajectory):
+            coords[i] = ag2.positions
+            if has_box:
+                dims[i] = ts.dimensions
+
+        # Vectorized COM centering for all frames at once
+        m = ag2.masses
+        com = np.einsum("fai,a->fi", coords, m) / m.sum()   # (n_frames, 3)
+        coords -= com[:, None, :]
+
         # write_object expects a MDA Universe, so we have to generate a new one
         new_u = mda.Merge(ag2)
-        coords = np.array([ag2.positions for ts in u.trajectory])
-        dims = None if u.dimensions is None else np.array([ts.dimensions for ts in u.trajectory])
-        new_u.load_new(coords, format=MemoryReader, dimensions=dims)
+        new_u.load_new(coords, format=MemoryReader, dimensions=dims, order="fac")
         write_object(new_u, output.trajectory)
 
 rule trajectory_centered_at_m2_COM_MDAnalysis_pseudo:
@@ -319,18 +378,27 @@ rule trajectory_centered_at_m2_COM_MDAnalysis_pseudo:
         trajectory="<pseudosimulation>m2_trajectory_centered.<ext_trj>",
     run:
         n_mol1 = get_num_atoms(input.structure1)
-
         u = read_object(input.trajectory)
-        ag2 = u.select_atoms("all")
-        ag2 = ag2[n_mol1:]
+        ag2 = u.atoms[n_mol1:]
 
-        u.trajectory.add_transformations(center_in_box(ag2, center='mass', point=[0, 0, 0]))
+        n_frames = u.trajectory.n_frames
+        coords = np.empty((n_frames, ag2.n_atoms, 3), dtype=np.float32)
+        has_box = u.dimensions is not None
+        dims = np.empty((n_frames, 6), dtype=np.float32) if has_box else None
+
+        for i, ts in enumerate(u.trajectory):
+            coords[i] = ag2.positions
+            if has_box:
+                dims[i] = ts.dimensions
+
+        # Vectorized COM centering for all frames at once
+        m = ag2.masses
+        com = np.einsum("fai,a->fi", coords, m) / m.sum()   # (n_frames, 3)
+        coords -= com[:, None, :]
 
         # write_object expects a MDA Universe, so we have to generate a new one
         new_u = mda.Merge(ag2)
-        coords = np.array([ag2.positions for ts in u.trajectory])
-        dims = None if u.dimensions is None else np.array([ts.dimensions for ts in u.trajectory])
-        new_u.load_new(coords, format=MemoryReader, dimensions=dims)
+        new_u.load_new(coords, format=MemoryReader, dimensions=dims, order="fac")
         write_object(new_u, output.trajectory)
 
 rule m2_COM_MDAnalysis:
@@ -356,31 +424,21 @@ rule m2_COM_MDAnalysis:
                 f.write(f'@ s0 legend "MOL2 Y"\n')
                 f.write(f'@ s0 legend "MOL2 Z"\n')
                 f.write("@TYPE xy\n")
-
-                for row in data:
-                    f.write(" ".join(f"{x:.8f}" for x in row) + "\n")
+                np.savetxt(f, data, fmt="%.8f")
 
         n_mol1 = get_num_atoms(input.structure1)
-#         try:
-#             u = Universe(input.trajectory, format="LAMMPSDUMP")
-#         except ValueError:
-#             u = Universe(input.structure, input.trajectory)
-#         print(u, " traj len ", len(u.trajectory))
         u = read_object(input.trajectory)
-        ag2 = u.select_atoms("all")
-        ag2 = ag2[n_mol1:]
+        ag2 = u.atoms[n_mol1:]
 
         # Output writer
-        all_coms = []
-        for ts in u.trajectory:
-            # Compute COM
-            com = ag2.center_of_mass()
-            all_coms.append(com)
-        all_coms = np.array(all_coms)
-        # print(all_coms)
-        data = np.column_stack([np.arange(len(u.trajectory)), all_coms[:, 0], all_coms[:, 1], all_coms[:, 2]])
-        print("data ", data.shape)
-        save_xvg(output.trajectory,data,xlabel="Time (ps)",ylabel="Coordinate (nm)", title="Center of mass")
+        n_frames = len(u.trajectory)
+        data = np.empty((n_frames, 4))
+        for i, ts in enumerate(u.trajectory):
+            data[i, 0] = ts.time
+            data[i, 1:] = ag2.center_of_mass() / 10.0   # Å -> nm
+        
+        save_xvg(output.trajectory, data, xlabel="Time (ps)", ylabel="Coordinate (nm)", title="Center of mass")
+
 
 rule m2_COM_MDAnalysis_pseudo:
     """
@@ -406,24 +464,17 @@ rule m2_COM_MDAnalysis_pseudo:
                 f.write(f'@ s0 legend "MOL2 Y"\n')
                 f.write(f'@ s0 legend "MOL2 Z"\n')
                 f.write("@TYPE xy\n")
-
-                for row in data:
-                    f.write(" ".join(f"{x:.8f}" for x in row) + "\n")
+                np.savetxt(f, data, fmt="%.8f")
 
         n_mol1 = get_num_atoms(input.structure1)
-#         try:
-#             u = Universe(input.trajectory, format="LAMMPSDUMP")
-#         except ValueError:
-#             u = Universe(input.structure, input.trajectory)
         u = read_object(input.trajectory)
-        ag2 = u.select_atoms("all")
-        ag2 = ag2[n_mol1:]
+        ag2 = u.atoms[n_mol1:]
+
         # Output writer
-        all_coms = []
-        for ts in u.trajectory:
-            # Compute COM
-            com = ag2.center_of_geometry() # todo: CHANGE TO MASS!
-            all_coms.append(com)
-        all_coms = np.array(all_coms)
-        data = np.column_stack([np.arange(len(u.trajectory)), all_coms[:, 0], all_coms[:, 1], all_coms[:, 2]])
-        save_xvg(output.trajectory,data,xlabel="Time (ps)",ylabel="Coordinate (nm)", title="Center of mass")
+        n_frames = len(u.trajectory)
+        data = np.empty((n_frames, 4))
+        for i, ts in enumerate(u.trajectory):
+            data[i, 0] = ts.time
+            data[i, 1:] = ag2.center_of_mass() / 10.0   # Å -> nm
+        
+        save_xvg(output.trajectory, data, xlabel="Time (ps)", ylabel="Coordinate (nm)", title="Center of mass")

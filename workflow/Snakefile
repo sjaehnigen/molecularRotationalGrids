@@ -1,7 +1,8 @@
 configfile: "workflow/config/defaults.yaml"
 
 wildcard_constraints:
-    path = "<simulation>|<pseudosimulation>|<outputs_assignment>"
+    path = "<simulation>|<pseudosimulation>|<outputs_assignment>",
+    simulation = "[^/]+",
 
 from workflow.helpers.build_subgrids import auto_create_grid
 
@@ -20,6 +21,7 @@ elif config["grid"]["translation_algorithm"]=="cartesian":
 else:
     raise ValueError("Cannot calculate total number of grid points.")
 
+SIM_ROOT = config["analysis"]["simulations_root"]
 
 pathvars:
     # general terms, not complete paths
@@ -47,7 +49,9 @@ pathvars:
     outputs_network = "<output_specific_molecule_network>network/",
 
     # output simulation
-    simulation = f"<output_specific_molecule>SIMULATION/",
+    # simulation = config.get("analysis").get("simulation_path",
+    #                                        "<output_specific_molecule>SIMULATION/"),
+    simulation = f"<output_specific_molecule>{SIM_ROOT}" + "{simulation}/",
     simulation_traj_slices = f"<simulation>trajectory_slices/",
     analysis_simulation = f"<output_specific_molecule_network>simulation/",
 
@@ -55,7 +59,8 @@ pathvars:
     pseudosimulation = f"<output_specific_molecule_network>pseudosimulation/",
     pseudosimulation_traj_slices = f"<pseudosimulation>trajectory_slices/",
     outputs_indices = f"<output_specific_molecule_network>important_indices/",
-    outputs_assignment = f"<output_specific_molecule_network>assignment/",
+    outputs_assignment_parent = "<output_specific_molecule_network>assignment/",
+    outputs_assignment = "<outputs_assignment_parent>{simulation}/",
     outputs_molecular_plots = f"<output_specific_molecule_network>molecular_plots/",
     outputs_other_plots = f"<output_specific_molecule_network>other_plots/",
     outputs_vmd = f"<output_specific_molecule_network>vmd/",
@@ -117,8 +122,13 @@ if "plot_lowest_energies" in config["analysis"]["parts_to_perform"]:
     )
 
 if "assign_trajectory"  in config["analysis"]["parts_to_perform"]:
+    # ext wildcard only because <ext_trj> has not yet been resolved
+    SIMULATIONS = glob_wildcards(rules._sim_root.input[0] + SIM_ROOT + "{simulation,[^/]+}/trajectory.{ext,[^/]+}").simulation
     DESIRED_RESULTS.extend(
-        ["<outputs_assignment>wrapped_trajectory.<ext_trj>", "<outputs_assignment>full_assignment.npy",]
+        [
+         expand("<outputs_assignment_parent>{simulation}/wrapped_trajectory.<ext_trj>", simulation=SIMULATIONS),
+         expand("<outputs_assignment_parent>{simulation}/full_assignment.npy", simulation=SIMULATIONS),
+        ]
 #         expand(f"<outputs_molecular_plots>compare_to_assignment/overlapping_frame_{{i}}zoom{{zoom_level}}_view{{view_index}}_{{COM_or_full}}.png",
 #             zoom_level=zoom_level,view_index=view_index,COM_or_full=["full"], i=[0, 1, 2, 3, 4, 5, 6, 7, 468, 98])]
     )
