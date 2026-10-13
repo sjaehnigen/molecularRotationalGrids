@@ -126,7 +126,7 @@ if "assign_trajectory"  in config["analysis"]["parts_to_perform"]:
     SIMULATIONS = glob_wildcards(rules._sim_root.input[0] + SIM_ROOT + "{simulation,[^/]+}/trajectory.{ext,[^/]+}").simulation
     DESIRED_RESULTS.extend(
         [
-         expand("<outputs_assignment_parent>{simulation}/wrapped_trajectory.<ext_trj>", simulation=SIMULATIONS),
+#         expand("<outputs_assignment_parent>{simulation}/wrapped_trajectory.<ext_trj>", simulation=SIMULATIONS),
          expand("<outputs_assignment_parent>{simulation}/full_assignment.npy", simulation=SIMULATIONS),
         ]
 #         expand(f"<outputs_molecular_plots>compare_to_assignment/overlapping_frame_{{i}}zoom{{zoom_level}}_view{{view_index}}_{{COM_or_full}}.png",

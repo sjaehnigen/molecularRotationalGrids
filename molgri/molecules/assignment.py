@@ -58,6 +58,7 @@ def assign_to_cartesian_translation_grid(points_to_assign: NDArray, subgrids: li
     Returns:
         a (N_points,) array of translation indices
     """
+
     assert len(subgrids) == len(subgrid_limits) == len(periodic_in) == 3, f'False statement: {len(subgrids)} == {len(subgrid_limits)} == {len(periodic_in)} == 3'
     N_x, N_y, N_z = [len(subgrid) for subgrid in subgrids]
 

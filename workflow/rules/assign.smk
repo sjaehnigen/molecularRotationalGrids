@@ -63,6 +63,7 @@ rule create_structure_2:
         structure = get_bimolecular_structure(m1, m2, z_distance=z_distance)
         write_object(structure, output.structure)
 
+# ToDO: The following rule is obsolete and invalid if M1 is NOT centered at (0,0,0). For the assignment, any location of M1 is allowed 
 rule wrap_trajectory2cuboid_cell:
     """
     This rule takes a normal (already centered etc.) trajectory of two molecules and applies periodic boundary
@@ -130,8 +131,7 @@ rule wrap_molecule2_COM:
         com_m2 = read_object(input.com_m2)
         # print(com_m2, len(com_m2))
         # NEED TO CONVERT TO ANGSTROM
-        # com_array_m2 = 10 * com_m2.to_numpy()[:, -3:]
-        com_array_m2 = com_m2.to_numpy()[:, -3:]
+        com_array_m2 = 10 * com_m2.to_numpy()[:, -3:]
         # print(com_array_m2)
 
         write_object(com_array_m2, output.com_m2)
@@ -234,16 +234,15 @@ rule position_assignment_csv:
         ]
 
 #        df_assignments.columns = pd.MultiIndex.from_tuples(tuples)
-
 #        write_object(df_assignments, output.assignment_csv)
-        # write_object(np.array(data[3]), output.translation_assignment)
-        write_object(np.array(data[2]), output.translation_assignment)
+        write_object(np.array(data[-1]), output.translation_assignment)
 
 
 
 ##################################### ROTATION ASSIGNMENT ####################################################
 
 
+# ToDo: change to reference frame of m1 to allow any orientation of m1
 rule rotation_assignment:
     """
     The closest rotational fit of molecule 2 is found and reported as rotation index.
@@ -258,6 +257,7 @@ rule rotation_assignment:
         assigned_trajectory = f"<outputs_assignment>rotation_assignment.npy"
     run:
         # the trajectories must only contain m2 and it needs to be already centered at origin
+        # NB: works on absolute orientation, i.e. assumes fixed orientation of m1
         trajectory_universe = Universe(input.structure2, input.trajectory)
         reference_universe = Universe(input.structure2, input.reference_pt)
         print("traj ref ", len(trajectory_universe.trajectory), len(reference_universe.trajectory))
@@ -330,6 +330,7 @@ rule count_assignments:
 #     else:
 #         return {"trajectory": f"{wc.path}trajectory.<ext_trj>", "structure1": f"{wc.path}molecule1.<ext_inp>", "structure": f"{wc.path}structure.<ext_str>"}
 #
+
 rule trajectory_centered_at_m2_COM_MDAnalysis:
     """
     Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
@@ -403,8 +404,9 @@ rule trajectory_centered_at_m2_COM_MDAnalysis_pseudo:
 
 rule m2_COM_MDAnalysis:
     """
-    Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
-    molecule1 is not written. This is useful so we can later assign the best rotation.
+    Write the whole trajectory of the COM of molecule 2.
+    This is used later for assigning the to the translation grid.
+    Removes COM of molecule 1 (no effect if it is already centered at (0,0,0))
     """
     input:
         trajectory=f"<simulation>trajectory.<ext_trj>",
@@ -419,7 +421,7 @@ rule m2_COM_MDAnalysis:
                     f.write("#\n")
                 f.write(f'@    title \"{title}\"\n')
                 f.write(f'@    xaxis label \"{xlabel}\"\n')
-                f.write(f'@    xaxis label \"{xlabel}\"\n')
+                f.write(f'@    yaxis label \"{ylabel}\"\n')
                 f.write(f'@ s0 legend "MOL2 X"\n')
                 f.write(f'@ s0 legend "MOL2 Y"\n')
                 f.write(f'@ s0 legend "MOL2 Z"\n')
@@ -428,6 +430,7 @@ rule m2_COM_MDAnalysis:
 
         n_mol1 = get_num_atoms(input.structure1)
         u = read_object(input.trajectory)
+        ag1 = u.atoms[:n_mol1]
         ag2 = u.atoms[n_mol1:]
 
         # Output writer
@@ -435,15 +438,18 @@ rule m2_COM_MDAnalysis:
         data = np.empty((n_frames, 4))
         for i, ts in enumerate(u.trajectory):
             data[i, 0] = ts.time
-            data[i, 1:] = ag2.center_of_mass() / 10.0   # Å -> nm
+            # data[i, 1:] = ag2.center_of_mass()
+            data[i, 1:] = ag2.center_of_mass() - ag1.center_of_mass()
         
-        save_xvg(output.trajectory, data, xlabel="Time (ps)", ylabel="Coordinate (nm)", title="Center of mass")
+        # Å -> nm
+        save_xvg(output.trajectory, data / 10.0, xlabel="Time (ps)", ylabel="Coordinate (nm)", title="Center of mass")
 
 
 rule m2_COM_MDAnalysis_pseudo:
     """
-    Write the whole trajectory translated in such a way that the COM of molecule 2 is at (0,0,0) in each frame and
-    molecule1 is not written. This is useful so we can later assign the best rotation.
+    Write the whole trajectory of the COM of molecule 2.
+    This is used later for assigning the to the translation grid.
+    Optional: remove COM of molecule 1 if not already centered at (0,0,0)
     """
     input:
         trajectory=f"<pseudosimulation>trajectory.<ext_trj>",
@@ -468,6 +474,7 @@ rule m2_COM_MDAnalysis_pseudo:
 
         n_mol1 = get_num_atoms(input.structure1)
         u = read_object(input.trajectory)
+        ag1 = u.atoms[:n_mol1]
         ag2 = u.atoms[n_mol1:]
 
         # Output writer
@@ -475,6 +482,7 @@ rule m2_COM_MDAnalysis_pseudo:
         data = np.empty((n_frames, 4))
         for i, ts in enumerate(u.trajectory):
             data[i, 0] = ts.time
-            data[i, 1:] = ag2.center_of_mass() / 10.0   # Å -> nm
+            # data[i, 1:] = ag2.center_of_mass() / 10.0   # Å -> nm
+            data[i, 1:] = (ag2.center_of_mass() - ag1.center_of_mass()) / 10.0   # Å -> nm
         
         save_xvg(output.trajectory, data, xlabel="Time (ps)", ylabel="Coordinate (nm)", title="Center of mass")
